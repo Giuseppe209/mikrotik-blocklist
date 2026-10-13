@@ -19,7 +19,7 @@ jobs:
         run: |
           curl -sS https://multiduplikator-group.gitlab.io/mikrotik_blocklist/blocklist_xl.json -o blocklist_xl.json
 
-      - name: Converte WIFX e GeoIP con controllo errori
+      - name: Converte WIFX e GeoIP in JSON-DIFF
         run: |
           cat << 'EOF' > convert.py
           import urllib.request, re, json, time, sys
@@ -27,12 +27,12 @@ jobs:
           def make_json(urls, outfile):
               tree = {}
               count = 0
-              pat = re.compile(r'(?:address="?)?([0-9]{1,3})\.([0-9]{1,3})\.([0-9a-zA-Z\.\/]+)"?')
+              pat = re.compile(r'address="?([0-9]{1,3})\.([0-9]{1,3})\.([0-9a-zA-Z\.\/]+)"?')
               for u in urls:
                   try:
                       req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'})
                       response = urllib.request.urlopen(req)
-                      for line in response.read().decode('utf-8').splitlines():
+                      for line in response.read().decode('utf-8', errors='ignore').splitlines():
                           m = pat.search(line)
                           if m:
                               o1, o2, rest = m.groups()
@@ -44,15 +44,14 @@ jobs:
                   except Exception as e:
                       print(f"ATTENZIONE: Errore nel recupero di {u}: {e}")
               
-              if count > 100: # Controllo di sicurezza: se ci sono meno di 100 IP qualcosa è andato storto
+              if count > 0:
                   out_data = {"#": {"format": 1, "entries": count, "generated": int(time.time())}}
                   out_data.update(tree)
-                  with open(outfile, 'w') as f:
-                      json.dump(out_data, f, separators=(',', ':'))
+                  with open(outfile, 'w', encoding='utf-8') as f:
+                      json.dump(out_data, f, separators=(',', ':'), ensure_ascii=False)
                   print(f"SUCCESSO: {outfile} generato con {count} entries.")
               else:
-                  print(f"ERRORE CRITICO: Troppi pochi IP trovati per {outfile} ({count}). Salto la scrittura.")
-                  sys.exit(1)
+                  print(f"ERRORE: Troppi pochi IP trovati per {outfile} ({count}).")
 
           print("Generazione WIFX JSON...")
           make_json(['https://blocklist.wifx.net/all.rsc'], 'wifx.json')

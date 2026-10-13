@@ -38,20 +38,21 @@ jobs:
                               o1, o2, rest = m.groups()
                               if o1 not in tree: tree[o1] = {}
                               if o2 not in tree[o1]: tree[o1][o2] = {}
-                              if rest not in tree[o1][o2]:
-                                  tree[o1][o2][rest] = 1
-                                  count += 1
+                              tree[o1][o2][rest] = 1
+                              count += 1
                   except Exception as e:
                       print(f"ATTENZIONE: Errore nel recupero di {u}: {e}")
               
               if count > 0:
                   out_data = {"#": {"format": 1, "entries": count, "generated": int(time.time())}}
-                  out_data.update(tree)
+                  for k, v in tree.items():
+                      out_data[k] = v
+
                   with open(outfile, 'w', encoding='utf-8') as f:
                       json.dump(out_data, f, separators=(',', ':'), ensure_ascii=False)
                   print(f"SUCCESSO: {outfile} generato con {count} entries.")
               else:
-                  print(f"ERRORE: Troppi pochi IP trovati per {outfile} ({count}).")
+                  print(f"ERRORE: Nessun IP trovato per {outfile}.")
 
           print("Generazione WIFX JSON...")
           make_json(['https://blocklist.wifx.net/all.rsc'], 'wifx.json')

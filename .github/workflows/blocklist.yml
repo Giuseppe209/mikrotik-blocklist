@@ -15,18 +15,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Necessario per evitare conflitti di sincronizzazione
+          fetch-depth: 0
 
-      - name: Elabora liste RSC in formato JSON-DIFF
+      - name: Copia Blocklist XL (Già in formato JSON)
+        run: |
+          echo "Download diretto di blocklist_xl.json..."
+          curl -sS https://multiduplikator-group.gitlab.io/mikrotik_blocklist/blocklist_xl.json -o blocklist_xl.json
+
+      - name: Converte WIFX e GeoIP in formato JSON-DIFF
         run: |
           cat << 'EOF' > convert.py
-          import urllib.request, re, json, time
+          import urllib.request, re, json, time, os
 
           def make_json(urls, outfile):
               tree = {}
               count = 0
-              # Estrae solo gli IP IPv4 e le Subnet ignorando i commenti
-              pat = re.compile(r'address="?([0-9]{1,3})\.([0-9]{1,3})\.([0-9a-zA-Z\.\/]+)"?')
+              # Estrae solo IP e Subnet IPv4
+              pat = re.compile(r'(?:address="?)?([0-9]{1,3})\.([0-9]{1,3})\.([0-9a-zA-Z\.\/]+)"?')
               for u in urls:
                   try:
                       req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'})
@@ -42,11 +47,25 @@ jobs:
                   except Exception as e:
                       print(f"Errore su {u}: {e}")
               
-              # Crea i metadati richiesti dallo script MikroTik
-              out_data = {"#": {"format": 1, "entries": count, "generated": int(time.time())}}
-              out_data.update(tree)
-              with open(outfile, 'w') as f:
-                  json.dump(out_data, f, separators=(',', ':'))
+              if count > 0:
+                  out_data = {"#": {"format": 1, "entries": count, "generated": int(time.time())}}
+                  out_data.update(tree)
+                  temp_out = outfile + ".tmp"
+                  with open(temp_out, 'w') as f:
+                      json.dump(out_data, f, separators=(',', ':'))
+                  
+                  if not os.path.exists(outfile):
+                      os.rename(temp_out, outfile)
+                  else:
+                      with open(outfile, 'r') as f_old:
+                           old_json = json.load(f_old)
+                      if old_json.get("1", {}) != out_data.get("1", {}) or old_json.get("#", {}).get("entries") != count:
+                           os.rename(temp_out, outfile)
+                      else:
+                           os.remove(temp_out)
+                           print(f"Nessuna modifica agli IP in {outfile}, salto.")
+              else:
+                  print(f"Errore: Nessun IP trovato per {outfile}.")
 
           print("Generazione WIFX JSON...")
           make_json(['https://blocklist.wifx.net/all.rsc'], 'wifx.json')
@@ -58,15 +77,14 @@ jobs:
           EOF
           python3 convert.py
 
-      - name: Salva nel Repository (Antiproiettile)
+      - name: Salva nel Repository
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add wifx.json geoip.json
+          git add *.json
           
-          # Previene l'errore se non ci sono state modifiche agli IP
+          # Salva solo se i file JSON sono cambiati
           git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update JSON"
           
-          # Allinea il codice locale con il server per evitare l'errore 'fetch first'
           git pull --rebase origin main
           git push

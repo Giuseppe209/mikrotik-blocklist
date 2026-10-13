@@ -1,0 +1,41 @@
+name: Genera Blocklist RSC per MikroTik
+
+# Esegue lo script ogni notte alle 02:00 (ora di Greenwich, quindi 03:00 o 04:00 da noi)
+# e permette l'esecuzione manuale dal pannello (workflow_dispatch)
+on:
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Scarica e formatta la Blocklist XL
+        run: |
+          # Scarica il TXT dal server di multiduplikator
+          curl -sS https://multiduplikator-group.gitlab.io/mikrotik_blocklist/blocklist_xl.txt -o raw.txt
+          
+          # Inizia a scrivere il file RSC per MikroTik
+          echo "/ip firewall address-list" > blocklist_xl.rsc
+          
+          # Legge il file, tiene solo IP/Subnet validi, toglie gli "a capo" sporchi e crea i comandi
+          grep -E '^[0-9a-fA-F\.\:\/]+$' raw.txt | tr -d '\r' | awk '{print "add list=new_blocklist address=\""$1"\" comment=\"blocklist\""}' >> blocklist_xl.rsc
+          
+          # Pulisce il file temporaneo
+          rm raw.txt
+
+      - name: Salva il file RSC nel Repository
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add blocklist_xl.rsc
+          # Committa solo se ci sono modifiche reali rispetto al giorno prima
+          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update Blocklist RSC"
+          git push

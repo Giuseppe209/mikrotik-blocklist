@@ -14,28 +14,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Copia Blocklist XL (Già in formato JSON)
+      - name: Copia Blocklist XL
         run: |
-          echo "Download diretto di blocklist_xl.json..."
           curl -sS https://multiduplikator-group.gitlab.io/mikrotik_blocklist/blocklist_xl.json -o blocklist_xl.json
 
-      - name: Converte WIFX e GeoIP in formato JSON-DIFF
+      - name: Converte WIFX e GeoIP con controllo errori
         run: |
           cat << 'EOF' > convert.py
-          import urllib.request, re, json, time, os
+          import urllib.request, re, json, time, sys
 
           def make_json(urls, outfile):
               tree = {}
               count = 0
-              # Estrae solo IP e Subnet IPv4
               pat = re.compile(r'(?:address="?)?([0-9]{1,3})\.([0-9]{1,3})\.([0-9a-zA-Z\.\/]+)"?')
               for u in urls:
                   try:
                       req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'})
-                      for line in urllib.request.urlopen(req).read().decode('utf-8').splitlines():
+                      response = urllib.request.urlopen(req)
+                      for line in response.read().decode('utf-8').splitlines():
                           m = pat.search(line)
                           if m:
                               o1, o2, rest = m.groups()
@@ -45,27 +42,17 @@ jobs:
                                   tree[o1][o2][rest] = 1
                                   count += 1
                   except Exception as e:
-                      print(f"Errore su {u}: {e}")
+                      print(f"ATTENZIONE: Errore nel recupero di {u}: {e}")
               
-              if count > 0:
+              if count > 100: # Controllo di sicurezza: se ci sono meno di 100 IP qualcosa è andato storto
                   out_data = {"#": {"format": 1, "entries": count, "generated": int(time.time())}}
                   out_data.update(tree)
-                  temp_out = outfile + ".tmp"
-                  with open(temp_out, 'w') as f:
+                  with open(outfile, 'w') as f:
                       json.dump(out_data, f, separators=(',', ':'))
-                  
-                  if not os.path.exists(outfile):
-                      os.rename(temp_out, outfile)
-                  else:
-                      with open(outfile, 'r') as f_old:
-                           old_json = json.load(f_old)
-                      if old_json.get("1", {}) != out_data.get("1", {}) or old_json.get("#", {}).get("entries") != count:
-                           os.rename(temp_out, outfile)
-                      else:
-                           os.remove(temp_out)
-                           print(f"Nessuna modifica agli IP in {outfile}, salto.")
+                  print(f"SUCCESSO: {outfile} generato con {count} entries.")
               else:
-                  print(f"Errore: Nessun IP trovato per {outfile}.")
+                  print(f"ERRORE CRITICO: Troppi pochi IP trovati per {outfile} ({count}). Salto la scrittura.")
+                  sys.exit(1)
 
           print("Generazione WIFX JSON...")
           make_json(['https://blocklist.wifx.net/all.rsc'], 'wifx.json')
@@ -82,9 +69,5 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git add *.json
-          
-          # Salva solo se i file JSON sono cambiati
-          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update JSON"
-          
-          git pull --rebase origin main
-          git push
+          git commit -m "Auto-update JSON" || echo "Nessuna modifica"
+          git push --force

@@ -1,7 +1,5 @@
-name: Genera Blocklist RSC per MikroTik
+name: Genera JSON-DIFF per MikroTik
 
-# Esegue lo script ogni notte alle 02:00 (ora di Greenwich, quindi 03:00 o 04:00 da noi)
-# e permette l'esecuzione manuale dal pannello (workflow_dispatch)
 on:
   schedule:
     - cron: '0 2 * * *'
@@ -14,28 +12,54 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Scarica e formatta la Blocklist XL
+      - name: Elabora liste RSC in formato JSON-DIFF
         run: |
-          # Scarica il TXT dal server di multiduplikator
-          curl -sS https://multiduplikator-group.gitlab.io/mikrotik_blocklist/blocklist_xl.txt -o raw.txt
-          
-          # Inizia a scrivere il file RSC per MikroTik
-          echo "/ip firewall address-list" > blocklist_xl.rsc
-          
-          # Legge il file, tiene solo IP/Subnet validi, toglie gli "a capo" sporchi e crea i comandi
-          grep -E '^[0-9a-fA-F\.\:\/]+$' raw.txt | tr -d '\r' | awk '{print "add list=new_blocklist address=\""$1"\" comment=\"blocklist\""}' >> blocklist_xl.rsc
-          
-          # Pulisce il file temporaneo
-          rm raw.txt
+          cat << 'EOF' > convert.py
+          import urllib.request, re, json, time
 
-      - name: Salva il file RSC nel Repository
+          def make_json(urls, outfile):
+              tree = {}
+              count = 0
+              # Estrae solo gli IP IPv4 e le Subnet ignorando i commenti
+              pat = re.compile(r'address="?([0-9]{1,3})\.([0-9]{1,3})\.([0-9a-zA-Z\.\/]+)"?')
+              for u in urls:
+                  try:
+                      req = urllib.request.Request(u, headers={'User-Agent': 'Mozilla/5.0'})
+                      for line in urllib.request.urlopen(req).read().decode('utf-8').splitlines():
+                          m = pat.search(line)
+                          if m:
+                              o1, o2, rest = m.groups()
+                              if o1 not in tree: tree[o1] = {}
+                              if o2 not in tree[o1]: tree[o1][o2] = {}
+                              if rest not in tree[o1][o2]:
+                                  tree[o1][o2][rest] = 1
+                                  count += 1
+                  except Exception as e:
+                      print(f"Errore su {u}: {e}")
+              
+              # Crea i metadati richiesti dallo script MikroTik
+              out_data = {"#": {"format": 1, "entries": count, "generated": int(time.time())}}
+              out_data.update(tree)
+              with open(outfile, 'w') as f:
+                  json.dump(out_data, f, separators=(',', ':'))
+
+          print("Generazione WIFX JSON...")
+          make_json(['https://blocklist.wifx.net/all.rsc'], 'wifx.json')
+
+          print("Generazione GeoIP JSON (CN, RU, KP, IR)...")
+          countries = ["CN", "RU", "KP", "IR"]
+          geo = [f"https://raw.githubusercontent.com/mo13ammad/Country-IP-List/main/generated/{c}.rsc" for c in countries]
+          make_json(geo, 'geoip.json')
+          EOF
+          python3 convert.py
+
+      - name: Salva nel Repository
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          git add blocklist_xl.rsc
-          # Committa solo se ci sono modifiche reali rispetto al giorno prima
-          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update Blocklist RSC"
+          git add wifx.json geoip.json
+          git diff --quiet && git diff --staged --quiet || git commit -m "Auto-update JSON"
           git push

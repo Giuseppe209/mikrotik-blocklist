@@ -2,6 +2,9 @@ name: Genera JSON-DIFF per MikroTik
 
 on:
   schedule:
+    # Due esecuzioni indipendenti (UTC, minuti "storti" per evitare i picchi di GitHub).
+    # Se una viene saltata, l'altra aggiorna comunque i JSON prima delle 03:00 italiane.
+    - cron: '17 22 * * *'
     - cron: '17 0 * * *'
   workflow_dispatch:
 
@@ -42,7 +45,7 @@ jobs:
                               count += 1
                   except Exception as e:
                       print(f"ATTENZIONE: Errore nel recupero di {u}: {e}")
-              
+
               if count > 0:
                   out_data = {"#": {"format": 1, "entries": count, "generated": int(time.time())}}
                   for k, v in tree.items():

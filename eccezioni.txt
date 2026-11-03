@@ -1,0 +1,7 @@
+# IP da NON bloccare mai (tolti da blocklist_xl.json, wifx.json e geoip.json prima della pubblicazione).
+# Un indirizzo per riga, "#" per i commenti. Se una lista contiene una rete (CIDR) che include
+# uno di questi IP, viene tolta l'intera rete (con avviso nel log della Action).
+#
+# RustDesk – server pubblico rendezvous/relay (rs-ny.rustdesk.com / rs-us.rustdesk.com).
+# Entrato in blocklist_xl il 31/10/2026 → RustDesk bloccato in tutte le sedi.
+209.250.254.15

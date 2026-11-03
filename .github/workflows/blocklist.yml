@@ -67,6 +67,12 @@ jobs:
           EOF
           python3 convert.py
 
+      - name: Toglie le eccezioni (eccezioni.txt)
+        # Se fallisce la Action si ferma e non pubblica: i router tengono le liste del giorno prima.
+        run: |
+          python3 filtra_eccezioni.py --blocchi blocklist_xl.json
+          python3 filtra_eccezioni.py wifx.json geoip.json
+
       - name: Salva nel Repository
         run: |
           git config --local user.email "action@github.com"
